@@ -47,7 +47,7 @@ function App() {
             {/* Protected app routes */}
             <Route element={<ProtectedRoute />}>
               <Route element={<AppLayout />}>
-                <Route path="/" element={<Navigate to="/leads" replace />} />
+                <Route path="/" element={<Navigate to="/leads\" replace />} />
                 <Route path="/leads/*" element={<LeadManagerLayout />} />
                 <Route path="/enrichment/*" element={<ComingSoon module="Enrichment Queue" />} />
                 <Route path="/matching/*" element={<ComingSoon module="Matchmaking Dashboard" />} />
@@ -58,7 +58,7 @@ function App() {
             </Route>
 
             {/* Redirect any unknown routes to login */}
-            <Route path="*" element={<Navigate to="/auth/login" replace />} />
+            <Route path="*" element={<Navigate to="/auth/login\" replace />} />
           </Routes>
           <Toaster 
             position="top-right" 
