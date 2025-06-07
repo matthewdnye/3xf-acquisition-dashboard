@@ -20,7 +20,7 @@ function App() {
       <Router>
         <div className="min-h-screen bg-gray-50">
           <Routes>
-            <Route path="/" element={<Navigate to="/leads" replace />} />
+            <Route path="/" element={<Navigate to="/leads\" replace />} />
             <Route path="/leads/*" element={<LeadManagerLayout />} />
             <Route path="/enrichment/*" element={<ComingSoon module="Enrichment Queue" />} />
             <Route path="/matching/*" element={<ComingSoon module="Matchmaking Dashboard" />} />
