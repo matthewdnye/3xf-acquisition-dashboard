@@ -215,6 +215,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
     } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (!mounted) return
 
+      console.log('Auth state change:', event, session?.user?.email)
+
       if (event === 'SIGNED_IN' && session?.user) {
         const profile = await fetchUserProfile(session.user)
         dispatch({
@@ -237,12 +239,52 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   // Auth methods
   const signIn = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    })
+    try {
+      console.log('Attempting to sign in with:', email)
+      
+      // First try to sign in
+      const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      })
 
-    if (error) {
+      if (signInError) {
+        console.log('Sign in failed:', signInError.message)
+        
+        // If sign in fails because user doesn't exist, try to sign up
+        if (signInError.message.includes('Invalid login credentials') || 
+            signInError.message.includes('Email not confirmed')) {
+          
+          console.log('Attempting to sign up new user...')
+          
+          const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+            email,
+            password,
+            options: {
+              emailRedirectTo: `${window.location.origin}/auth/callback`,
+            },
+          })
+
+          if (signUpError) {
+            console.error('Sign up error:', signUpError)
+            throw signUpError
+          }
+
+          if (signUpData.user && !signUpData.user.email_confirmed_at) {
+            toast.success('Check your email for a confirmation link!')
+            return
+          }
+
+          console.log('Sign up successful:', signUpData.user?.email)
+          return
+        }
+        
+        throw signInError
+      }
+
+      console.log('Sign in successful:', signInData.user?.email)
+    } catch (error: any) {
+      console.error('Authentication error:', error)
       throw error
     }
   }
