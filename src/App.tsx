@@ -1,36 +1,49 @@
-import { useState } from 'react'
+import React from 'react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
+import { Toaster } from 'react-hot-toast'
+import { LeadManagerLayout } from './components/leads/LeadManagerLayout'
+
+// Create a client
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 1000 * 60 * 5, // 5 minutes
+      retry: 1,
+    },
+  },
+})
 
 function App() {
-  const [count, setCount] = useState(0)
-
   return (
-    <div className="min-h-screen bg-gray-100 py-6 flex flex-col justify-center sm:py-12">
-      <div className="relative py-3 sm:max-w-xl sm:mx-auto">
-        <div className="relative px-4 py-10 bg-white shadow-lg sm:rounded-3xl sm:p-20">
-          <div className="max-w-md mx-auto">
-            <div className="divide-y divide-gray-200">
-              <div className="py-8 text-base leading-6 space-y-4 text-gray-700 sm:text-lg sm:leading-7">
-                <h1 className="text-3xl font-bold text-center mb-8">
-                  3x Freedom Dashboard
-                </h1>
-                <p className="text-center">
-                  Welcome to your new dashboard application!
-                </p>
-                <div className="text-center mt-4">
-                  <button
-                    className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors"
-                    onClick={() => setCount((count) => count + 1)}
-                  >
-                    Count is {count}
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
+    <QueryClientProvider client={queryClient}>
+      <Router>
+        <div className="min-h-screen bg-gray-50">
+          <Routes>
+            <Route path="/" element={<Navigate to="/leads" replace />} />
+            <Route path="/leads/*" element={<LeadManagerLayout />} />
+            <Route path="/enrichment/*" element={<ComingSoon module="Enrichment Queue" />} />
+            <Route path="/matching/*" element={<ComingSoon module="Matchmaking Dashboard" />} />
+            <Route path="/campaigns/*" element={<ComingSoon module="Campaign Manager" />} />
+            <Route path="/analytics/*" element={<ComingSoon module="Performance Analytics" />} />
+            <Route path="/settings/*" element={<ComingSoon module="Settings & Configuration" />} />
+          </Routes>
         </div>
+        <Toaster position="top-right" />
+      </Router>
+    </QueryClientProvider>
+  )
+}
+
+function ComingSoon({ module }: { module: string }) {
+  return (
+    <div className="flex items-center justify-center min-h-screen">
+      <div className="text-center">
+        <h1 className="text-2xl font-bold text-gray-900 mb-4">{module}</h1>
+        <p className="text-gray-600">This module is coming soon!</p>
       </div>
     </div>
   )
 }
 
-export default App 
+export default App
