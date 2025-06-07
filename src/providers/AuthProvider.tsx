@@ -145,9 +145,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
     loading: true,
   })
 
-  // Fetch user profile
+  // Fetch user profile with better error handling
   const fetchUserProfile = async (user: SupabaseUser): Promise<UserProfile | null> => {
     try {
+      console.log('Fetching user profile for:', user.email)
+      
       const { data, error } = await supabase
         .from('users')
         .select('*')
@@ -156,46 +158,96 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
       if (error) {
         console.error('Error fetching user profile:', error)
+        
+        // If user doesn't exist, create one
+        if (error.code === 'PGRST116') {
+          console.log('User profile not found, creating new profile...')
+          
+          const { data: newProfile, error: createError } = await supabase
+            .from('users')
+            .insert({
+              auth_id: user.id,
+              email: user.email || '',
+              full_name: user.user_metadata?.full_name || user.email?.split('@')[0],
+              role: 'viewer',
+              is_active: true,
+            })
+            .select()
+            .single()
+
+          if (createError) {
+            console.error('Error creating user profile:', createError)
+            return null
+          }
+
+          console.log('Created new user profile:', newProfile)
+          return newProfile as UserProfile
+        }
+        
         return null
       }
 
+      console.log('Fetched user profile:', data)
+
       // Update last login
-      await supabase
-        .from('users')
-        .update({ last_login: new Date().toISOString() })
-        .eq('auth_id', user.id)
+      try {
+        await supabase
+          .from('users')
+          .update({ last_login: new Date().toISOString() })
+          .eq('auth_id', user.id)
+      } catch (updateError) {
+        console.warn('Failed to update last login:', updateError)
+      }
 
       return data as UserProfile
     } catch (error) {
-      console.error('Error in fetchUserProfile:', error)
+      console.error('Unexpected error in fetchUserProfile:', error)
       return null
     }
   }
 
-  // Initialize auth state
+  // Initialize auth state with timeout
   useEffect(() => {
     let mounted = true
+    let timeoutId: NodeJS.Timeout
+
+    // Set a timeout to ensure loading doesn't hang forever
+    const timeoutDuration = 10000 // 10 seconds
+    timeoutId = setTimeout(() => {
+      if (mounted) {
+        console.warn('Auth initialization timed out, setting loading to false')
+        dispatch({ type: 'SET_LOADING', payload: false })
+      }
+    }, timeoutDuration)
 
     // Get initial session
     const initializeAuth = async () => {
       try {
+        console.log('Initializing auth...')
+        
         const { data: { session }, error } = await supabase.auth.getSession()
         
         if (error) {
           console.error('Error getting session:', error)
-          dispatch({ type: 'SET_LOADING', payload: false })
+          if (mounted) {
+            dispatch({ type: 'SET_LOADING', payload: false })
+          }
           return
         }
 
+        console.log('Session check complete. User:', session?.user?.email || 'none')
+
         if (session?.user && mounted) {
           const profile = await fetchUserProfile(session.user)
-          dispatch({
-            type: 'SET_USER',
-            payload: {
-              user: session.user as User,
-              profile,
-            },
-          })
+          if (mounted) {
+            dispatch({
+              type: 'SET_USER',
+              payload: {
+                user: session.user as User,
+                profile,
+              },
+            })
+          }
         } else if (mounted) {
           dispatch({ type: 'SET_LOADING', payload: false })
         }
@@ -203,6 +255,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
         console.error('Error initializing auth:', error)
         if (mounted) {
           dispatch({ type: 'SET_LOADING', payload: false })
+        }
+      } finally {
+        if (timeoutId) {
+          clearTimeout(timeoutId)
         }
       }
     }
@@ -215,24 +271,55 @@ export function AuthProvider({ children }: AuthProviderProps) {
     } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (!mounted) return
 
-      console.log('Auth state change:', event, session?.user?.email)
+      console.log('Auth state change:', event, session?.user?.email || 'none')
+
+      // Clear any existing timeout
+      if (timeoutId) {
+        clearTimeout(timeoutId)
+      }
 
       if (event === 'SIGNED_IN' && session?.user) {
-        const profile = await fetchUserProfile(session.user)
-        dispatch({
-          type: 'SET_USER',
-          payload: {
-            user: session.user as User,
-            profile,
-          },
-        })
+        try {
+          const profile = await fetchUserProfile(session.user)
+          if (mounted) {
+            dispatch({
+              type: 'SET_USER',
+              payload: {
+                user: session.user as User,
+                profile,
+              },
+            })
+          }
+        } catch (error) {
+          console.error('Error handling sign in:', error)
+          if (mounted) {
+            dispatch({ type: 'SET_LOADING', payload: false })
+          }
+        }
       } else if (event === 'SIGNED_OUT' || !session) {
-        dispatch({ type: 'SIGN_OUT' })
+        if (mounted) {
+          dispatch({ type: 'SIGN_OUT' })
+        }
+      } else if (event === 'TOKEN_REFRESHED' && session?.user) {
+        console.log('Token refreshed for user:', session.user.email)
+        // Don't refetch profile on token refresh, just update the user
+        if (mounted) {
+          dispatch({
+            type: 'SET_USER',
+            payload: {
+              user: session.user as User,
+              profile: state.profile,
+            },
+          })
+        }
       }
     })
 
     return () => {
       mounted = false
+      if (timeoutId) {
+        clearTimeout(timeoutId)
+      }
       subscription.unsubscribe()
     }
   }, [])
@@ -242,7 +329,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     try {
       console.log('Attempting to sign in with:', email)
       
-      // First try to sign in
+      // Try to sign in first
       const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
         email,
         password,
@@ -251,17 +338,18 @@ export function AuthProvider({ children }: AuthProviderProps) {
       if (signInError) {
         console.log('Sign in failed:', signInError.message)
         
-        // If sign in fails because user doesn't exist, try to sign up
-        if (signInError.message.includes('Invalid login credentials') || 
-            signInError.message.includes('Email not confirmed')) {
-          
-          console.log('Attempting to sign up new user...')
+        // If user doesn't exist, try to create account
+        if (signInError.message.includes('Invalid login credentials')) {
+          console.log('Attempting to create account...')
           
           const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
             email,
             password,
             options: {
-              emailRedirectTo: `${window.location.origin}/auth/callback`,
+              emailRedirectTo: `${window.location.origin}/`,
+              data: {
+                full_name: email.split('@')[0],
+              }
             },
           })
 
@@ -271,11 +359,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
           }
 
           if (signUpData.user && !signUpData.user.email_confirmed_at) {
-            toast.success('Check your email for a confirmation link!')
-            return
+            throw new Error('Please check your email for a confirmation link!')
           }
 
-          console.log('Sign up successful:', signUpData.user?.email)
+          console.log('Account created successfully')
           return
         }
         
@@ -293,7 +380,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     const { error } = await supabase.auth.signInWithOtp({
       email,
       options: {
-        emailRedirectTo: `${window.location.origin}/auth/callback`,
+        emailRedirectTo: `${window.location.origin}/`,
       },
     })
 
@@ -306,7 +393,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo: `${window.location.origin}/auth/callback`,
+        redirectTo: `${window.location.origin}/`,
       },
     })
 
