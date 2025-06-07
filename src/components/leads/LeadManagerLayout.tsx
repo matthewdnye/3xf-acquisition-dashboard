@@ -8,6 +8,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '../ui/tabs'
 import { Badge } from '../ui/badge'
 import { BusinessLeadsTable } from './BusinessLeadsTable'
 import { BuyerLeadsTable } from './BuyerLeadsTable'
+import { AddLeadModal } from './AddLeadModal'
 import { cn, debounce } from '../../lib/utils'
 
 export function LeadManagerLayout() {
@@ -22,6 +23,7 @@ export function LeadManagerLayout() {
   
   const { data: stats, isLoading: statsLoading } = useLeadStats()
   const [globalSearch, setGlobalSearch] = useState('')
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false)
 
   // Debounced search handler
   const debouncedSearch = debounce((search: string) => {
@@ -67,7 +69,7 @@ export function LeadManagerLayout() {
               <Download className="w-4 h-4 mr-2" />
               Export
             </Button>
-            <Button size="sm">
+            <Button size="sm" onClick={() => setIsAddModalOpen(true)}>
               <Plus className="w-4 h-4 mr-2" />
               Add Lead
             </Button>
@@ -157,6 +159,12 @@ export function LeadManagerLayout() {
           </TabsContent>
         </Tabs>
       </div>
+
+      {/* Add Lead Modal */}
+      <AddLeadModal 
+        isOpen={isAddModalOpen} 
+        onClose={() => setIsAddModalOpen(false)} 
+      />
     </div>
   )
 }
